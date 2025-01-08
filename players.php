@@ -23,17 +23,72 @@ function checkAuthorization($conn) {
     }
 }
 
+
+
+
 // GET
 if ($_SERVER["REQUEST_METHOD"] == "GET") {
-    $stmt = $conn->prepare("SELECT * FROM players");
-    $stmt->execute();
 
-    $stmt->setFetchMode(PDO::FETCH_ASSOC);
-    $result = $stmt->fetchAll();
+  
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10; // 10
+    $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0; // 0
+
+    $table = "players"; 
+
+
+    try {
+        $stmt = $conn->prepare("SELECT COUNT(*) FROM $table");
+        $stmt->execute();
+        $totalCount = $stmt->fetchColumn(); 
+    } catch (PDOException $e) {
+        echo json_encode(["error" => "Error fetching total count: " . $e->getMessage()]);
+        http_response_code(500); // Server Error
+        exit;
+    }
+
+ 
+    try {
+        $stmt = $conn->prepare("SELECT * FROM $table LIMIT :limit OFFSET :offset");
+        $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
+        $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $stmt->setFetchMode(PDO::FETCH_ASSOC);
+        $result = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
+        http_response_code(500); // Server Error
+        exit;
+    }
+
+  
+    $previousUrl = null;
+    $nextUrl = null;
+
+    if ($offset > 0) {
+        $previousOffset = $offset - $limit;
+        if ($previousOffset < 0) $previousOffset = 0;
+        $previousUrl = "http://localhost/Football/players.php?limit=$limit&offset=$previousOffset";
+    }
+
+    if ($offset + $limit < $totalCount) {
+        $nextOffset = $offset + $limit;
+        $nextUrl = "http://localhost/Football/players.php?limit=$limit&offset=$nextOffset";
+    }
+
+
+    $response = [
+        "count" => $totalCount,
+        "previous" => $previousUrl,
+        "next" => $nextUrl,
+        "result" => $result
+    ];
 
     header("Content-Type: application/json");
-    echo json_encode($result, JSON_PRETTY_PRINT);
+    echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 }
+
+
+
 
 //POST
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
@@ -182,7 +237,7 @@ if ($_SERVER["REQUEST_METHOD"] == "PATCH") {
 if ($_SERVER["REQUEST_METHOD"] == "DELETE") {
     checkAuthorization($conn); 
  
-    
+
     $data = json_decode(file_get_contents("php://input"), true);
 
     if (isset($data['id'])) {
