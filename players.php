@@ -24,68 +24,94 @@ function checkAuthorization($conn) {
 }
 
 
-
-
-// GET
 if ($_SERVER["REQUEST_METHOD"] == "GET") {
+    checkAuthorization($conn);
+
+    if (isset($_GET['id'])) { 
+        $id = intval($_GET['id']);
+
+        if ($id <= 0) {
+            echo json_encode(["error" => "Invalid ID provided."]);
+            http_response_code(400); 
+            exit();
+        }
+
+        try {
+            $stmt = $conn->prepare("SELECT * FROM players WHERE id = :id");
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            $stmt->execute();
+            $stmt->setFetchMode(PDO::FETCH_ASSOC);
+            $result = $stmt->fetch();
+
+            if ($result) {
+                echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                http_response_code(200); 
+            } else {
+                echo json_encode(["error" => "Player not found."]);
+                http_response_code(404); 
+            }
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
+            http_response_code(500); 
+        }
+    } else { 
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10; //  10
+        $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0; // 0
+
+        $table = "players"; 
+
+        try {
+          
+            $stmt = $conn->prepare("SELECT COUNT(*) FROM $table");
+            $stmt->execute();
+            $totalCount = $stmt->fetchColumn(); 
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching total count: " . $e->getMessage()]);
+            http_response_code(500); // Server Error
+            exit;
+        }
+
+        try {
+
+            $stmt = $conn->prepare("SELECT * FROM $table LIMIT :limit OFFSET :offset");
+            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
+            $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $stmt->setFetchMode(PDO::FETCH_ASSOC);
+            $result = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
+            http_response_code(500); 
+            exit;
+        }
 
   
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10; // 10
-    $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0; // 0
+        $previousUrl = null;
+        $nextUrl = null;
 
-    $table = "players"; 
+        if ($offset > 0) {
+            $previousOffset = $offset - $limit;
+            if ($previousOffset < 0) $previousOffset = 0;
+            $previousUrl = "http://localhost/Football/players.php?limit=$limit&offset=$previousOffset";
+        }
 
+        if ($offset + $limit < $totalCount) {
+            $nextOffset = $offset + $limit;
+            $nextUrl = "http://localhost/Football/players.php?limit=$limit&offset=$nextOffset";
+        }
 
-    try {
-        $stmt = $conn->prepare("SELECT COUNT(*) FROM $table");
-        $stmt->execute();
-        $totalCount = $stmt->fetchColumn(); 
-    } catch (PDOException $e) {
-        echo json_encode(["error" => "Error fetching total count: " . $e->getMessage()]);
-        http_response_code(500); // Server Error
-        exit;
+        $response = [
+            "count" => $totalCount,
+            "previous" => $previousUrl,
+            "next" => $nextUrl,
+            "result" => $result
+        ];
+
+        header("Content-Type: application/json");
+        echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
-
- 
-    try {
-        $stmt = $conn->prepare("SELECT * FROM $table LIMIT :limit OFFSET :offset");
-        $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
-        $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
-        $stmt->execute();
-        $stmt->setFetchMode(PDO::FETCH_ASSOC);
-        $result = $stmt->fetchAll();
-    } catch (PDOException $e) {
-        echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
-        http_response_code(500); // Server Error
-        exit;
-    }
-
-  
-    $previousUrl = null;
-    $nextUrl = null;
-
-    if ($offset > 0) {
-        $previousOffset = $offset - $limit;
-        if ($previousOffset < 0) $previousOffset = 0;
-        $previousUrl = "http://localhost/Football/players.php?limit=$limit&offset=$previousOffset";
-    }
-
-    if ($offset + $limit < $totalCount) {
-        $nextOffset = $offset + $limit;
-        $nextUrl = "http://localhost/Football/players.php?limit=$limit&offset=$nextOffset";
-    }
-
-
-    $response = [
-        "count" => $totalCount,
-        "previous" => $previousUrl,
-        "next" => $nextUrl,
-        "result" => $result
-    ];
-
-    header("Content-Type: application/json");
-    echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 }
+
 
 
 
@@ -99,7 +125,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 
     if (!isset($data["name"], $data["nationality"], $data["birth_year"], $data["matches_played"], $data["goals_scored"], $data["ranking"], $data["position"])) {
-        http_response_code(400); // Bad Request
+        http_response_code(400);
         echo json_encode(["error" => "All fields are required."]);
         exit;
     }

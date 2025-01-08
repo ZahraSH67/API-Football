@@ -25,61 +25,91 @@ function checkAuthorization($conn) {
     }
 }
 
+
+
 if ($_SERVER["REQUEST_METHOD"] == "GET") {
 
-    $limit = isset($_GET["limit"]) ? intval($_GET["limit"]) : 10; // Default to 10 if not specified
-    $offset = isset($_GET["offset"]) ? intval($_GET["offset"]) : 0; // Default to 0 if not specified
- 
+    if (isset($_GET['id'])) { 
+        $id = intval($_GET['id']);
 
+        if ($id <= 0) {
+            echo json_encode(["error" => "Invalid ID provided."]);
+            http_response_code(400); 
+            exit();
+        }
 
-    try {
-        $stmt = $conn->prepare("SELECT COUNT(*) FROM teams");
-        $stmt->execute();
-        $totalCount = $stmt->fetchColumn(); 
-    } catch (PDOException $e) {
-        echo json_encode(["error" => "Error fetching total count: " . $e->getMessage()]);
-        http_response_code(500); 
-        exit;
+        try {
+            $stmt = $conn->prepare("SELECT * FROM teams WHERE id = :id");
+            $stmt->bindParam(":id", $id, PDO::PARAM_INT);
+            $stmt->execute();
+            $stmt->setFetchMode(PDO::FETCH_ASSOC);
+            $result = $stmt->fetch();
+
+            if ($result) {
+                echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                http_response_code(200); // OK
+            } else {
+                echo json_encode(["error" => "Team not found."]);
+                http_response_code(404); // Not Found
+            }
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
+            http_response_code(500); // Server Error
+        }
+    } else { 
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10; 
+        $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0; 
+
+        $table = "teams"; 
+
+        try {
+            $stmt = $conn->prepare("SELECT COUNT(*) FROM $table");
+            $stmt->execute();
+            $totalCount = $stmt->fetchColumn(); 
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching total count: " . $e->getMessage()]);
+            http_response_code(500); // Server Error
+            exit;
+        }
+
+        try {
+            $stmt = $conn->prepare("SELECT * FROM $table LIMIT :limit OFFSET :offset");
+            $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
+            $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $stmt->setFetchMode(PDO::FETCH_ASSOC);
+            $result = $stmt->fetchAll();
+        } catch (PDOException $e) {
+            echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
+            http_response_code(500); // Server Error
+            exit;
+        }
+
+        // ساخت آدرس‌های previous و next
+        $previousUrl = null;
+        $nextUrl = null;
+
+        if ($offset > 0) {
+            $previousOffset = $offset - $limit;
+            if ($previousOffset < 0) $previousOffset = 0;
+            $previousUrl = "http://localhost/Football/teams.php?limit=$limit&offset=$previousOffset";
+        }
+
+        if ($offset + $limit < $totalCount) {
+            $nextOffset = $offset + $limit;
+            $nextUrl = "http://localhost/Football/teams.php?limit=$limit&offset=$nextOffset";
+        }
+
+        $response = [
+            "count" => $totalCount,
+            "previous" => $previousUrl,
+            "next" => $nextUrl,
+            "result" => $result
+        ];
+
+        header("Content-Type: application/json");
+        echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
-
-    try {
-        $stmt = $conn->prepare("SELECT * FROM teams LIMIT :limit OFFSET :offset");
-        $stmt->bindParam(":limit", $limit, PDO::PARAM_INT);
-        $stmt->bindParam(":offset", $offset, PDO::PARAM_INT);
-        $stmt->execute();
-        $stmt->setFetchMode(PDO::FETCH_ASSOC);
-        $result = $stmt->fetchAll();
-    } catch (PDOException $e) {
-        echo json_encode(["error" => "Error fetching data: " . $e->getMessage()]);
-        http_response_code(500); 
-        exit;
-    }
-
- 
-   $previousUrl = null;
-   $nextUrl = null;
-
-   if ($offset > 0) {
-       $previousOffset = $offset - $limit;
-       if ($previousOffset < 0) $previousOffset = 0;
-       $previousUrl = "http://localhost/Football/teams.php?limit=$limit&offset=$previousOffset";
-   }
-
-   if ($offset + $limit < $totalCount) {
-       $nextOffset = $offset + $limit;
-       $nextUrl = "http://localhost/Football/teams.php?limit=$limit&offset=$nextOffset";
-   }
-
-
-   $response = [
-       "count" => $totalCount,
-       "previous" => $previousUrl,
-       "next" => $nextUrl,
-       "result" => $result
-   ];
-
-   header("Content-Type: application/json");
-   echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 }
 
    
